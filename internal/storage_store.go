@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"errors"
-	"github.com/influxdata/influxql"
 
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/influxdb/services/storage"
@@ -11,6 +10,7 @@ import (
 	"github.com/influxdata/influxdb/storage/reads/datatypes"
 	"github.com/influxdata/influxdb/tsdb"
 	"github.com/influxdata/influxdb/tsdb/cursors"
+	"github.com/influxdata/influxql"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
