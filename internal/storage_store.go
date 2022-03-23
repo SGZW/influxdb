@@ -22,7 +22,7 @@ import (
 type StorageStoreMock struct {
 	ReadFilterFn func(ctx context.Context, req *datatypes.ReadFilterRequest) (reads.ResultSet, error)
 	ReadGroupFn  func(ctx context.Context, req *datatypes.ReadGroupRequest) (reads.GroupResultSet, error)
-	DeleteFn func(database string, sources []influxql.Source, condition influxql.Expr) error
+	DeleteFn     func(database string, sources []influxql.Source, condition influxql.Expr) error
 
 	TagKeysFn    func(ctx context.Context, req *datatypes.TagKeysRequest) (cursors.StringIterator, error)
 	TagValuesFn  func(ctx context.Context, req *datatypes.TagValuesRequest) (cursors.StringIterator, error)
@@ -64,7 +64,7 @@ func (s *StorageStoreMock) ReadFilter(ctx context.Context, req *datatypes.ReadFi
 	return s.ReadFilterFn(ctx, req)
 }
 
-func (s *StorageStoreMock) 	Delete(database string, sources []influxql.Source, condition influxql.Expr) error {
+func (s *StorageStoreMock) Delete(database string, sources []influxql.Source, condition influxql.Expr) error {
 	return s.DeleteFn(database, sources, condition)
 }
 
