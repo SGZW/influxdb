@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"github.com/influxdata/influxql"
 
 	"github.com/influxdata/influxdb/models"
 	"github.com/influxdata/influxdb/services/storage"
@@ -21,6 +22,7 @@ import (
 type StorageStoreMock struct {
 	ReadFilterFn func(ctx context.Context, req *datatypes.ReadFilterRequest) (reads.ResultSet, error)
 	ReadGroupFn  func(ctx context.Context, req *datatypes.ReadGroupRequest) (reads.GroupResultSet, error)
+	DeleteFn func(database string, sources []influxql.Source, condition influxql.Expr) error
 
 	TagKeysFn    func(ctx context.Context, req *datatypes.TagKeysRequest) (cursors.StringIterator, error)
 	TagValuesFn  func(ctx context.Context, req *datatypes.TagValuesRequest) (cursors.StringIterator, error)
@@ -44,6 +46,11 @@ func NewStorageStoreMock() *StorageStoreMock {
 	store.ReadGroupFn = func(context.Context, *datatypes.ReadGroupRequest) (reads.GroupResultSet, error) {
 		return nil, errors.New("implement me")
 	}
+
+	store.DeleteFn = func(database string, sources []influxql.Source, condition influxql.Expr) error {
+		return errors.New("implement me")
+	}
+
 	store.TagKeysFn = func(context.Context, *datatypes.TagKeysRequest) (cursors.StringIterator, error) {
 		return nil, errors.New("implement me")
 	}
@@ -55,6 +62,10 @@ func NewStorageStoreMock() *StorageStoreMock {
 
 func (s *StorageStoreMock) ReadFilter(ctx context.Context, req *datatypes.ReadFilterRequest) (reads.ResultSet, error) {
 	return s.ReadFilterFn(ctx, req)
+}
+
+func (s *StorageStoreMock) 	Delete(database string, sources []influxql.Source, condition influxql.Expr) error {
+	return s.DeleteFn(database, sources, condition)
 }
 
 func (s *StorageStoreMock) ReadGroup(ctx context.Context, req *datatypes.ReadGroupRequest) (reads.GroupResultSet, error) {

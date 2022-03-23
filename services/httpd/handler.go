@@ -200,6 +200,10 @@ func NewHandler(c Config) *Handler {
 			"POST", "/write", true, writeLogEnabled, h.serveWriteV1,
 		},
 		Route{
+			"delete",
+			"POST", "api/v2/delete", false, true, h.serveDeleteV2,
+		},
+		Route{
 			"write", // Data-ingest route.
 			"POST", "/api/v2/write", true, writeLogEnabled, h.serveWriteV2,
 		},
@@ -828,6 +832,105 @@ func bucket2dbrp(bucket string) (string, string, error) {
 		default:
 			return db, rp, nil
 		}
+	}
+}
+
+// serveDeleteV2 maps v2 write parameters to a v1 style handler.  the concepts
+// of an "org" and "bucket" are mapped to v1 "database" and "retention
+// policies".
+
+func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user meta.User) {
+	db, rp, err := bucket2dbrp(r.URL.Query().Get("bucket"))
+	if err != nil {
+		h.httpError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if db == "" {
+		h.httpError(w, "database is required", http.StatusBadRequest)
+		return
+	}
+
+	if di := h.MetaClient.Database(db); di == nil {
+		h.httpError(w, fmt.Sprintf("database not found: %q", db), http.StatusNotFound)
+		return
+	} else if nil == di.RetentionPolicy(rp) {
+		h.httpError(w, fmt.Sprintf("retention policy not found in %q: %q", db, rp), http.StatusNotFound)
+		return
+	}
+
+	if h.Config.AuthEnabled {
+		if user == nil {
+			h.httpError(w, fmt.Sprintf("user is required to delete from database %q", db), http.StatusForbidden)
+			return
+		}
+
+		// DeleteSeries requires write permission to the database
+		if err := h.WriteAuthorizer.AuthorizeWrite(user.ID(), db); err != nil {
+			h.httpError(w, fmt.Sprintf("%q user is not authorized to delete from database %q", user.ID(), db), http.StatusForbidden)
+			return
+		}
+	}
+
+	if err := r.ParseForm(); err != nil {
+		h.httpError(w, fmt.Sprintf("cannot parse delete request: %s", err.Error()), http.StatusBadRequest)
+		return
+	}
+	start := r.PostForm.Get("start")
+	if start == "" {
+		h.httpError(w, fmt.Sprintf("missing 'start' time for delete from %q", db), http.StatusBadRequest)
+		return
+	}
+	stop := r.PostForm.Get("stop")
+	if stop == "" {
+		h.httpError(w, fmt.Sprintf("missing 'stop' time for delete from %q", db), http.StatusBadRequest)
+		return
+	}
+	var timePredicate string
+	predicate := r.PostForm.Get("predicate")
+	timeRange := fmt.Sprintf("time >= '%s' AND time < '%s'", start, stop)
+
+	if predicate != "" {
+		timePredicate = fmt.Sprintf("%s AND %s", predicate, timeRange)
+	} else {
+		timePredicate = timeRange
+	}
+
+	cond, err := influxql.ParseExpr(timePredicate)
+
+	src := influxql.Measurement{Database: db, RetentionPolicy: rp}
+
+	// take out the _measurement = 'mymeasurement' clause to pass separately
+	_, remainingExpr, err := influxql.PartitionExpr(influxql.CloneExpr(cond), func(e influxql.Expr) (bool, error) {
+		switch e := e.(type) {
+		case *influxql.BinaryExpr:
+			switch e.Op {
+			case influxql.EQ:
+				tag, ok := e.LHS.(*influxql.VarRef)
+				if ok && tag.Val == "_measurement" {
+					src.Name = e.RHS.String()
+					return true, nil
+				}
+			case influxql.NEQ, influxql.REGEX, influxql.NEQREGEX:
+				tag, ok := e.LHS.(*influxql.VarRef)
+				if ok && tag.Val == "_measurement" {
+					return true, errors.New("delete predicate only supports equality operators for measurements")
+				}
+			}
+		}
+		return false, nil
+	})
+
+	if err != nil {
+		h.httpError(w, fmt.Sprintf("error parsing api/v2/delete - database: %q, retention policy: %q, start: %q, stop: %q, predicate: %q, error: %s",
+			db, rp, start, stop, predicate, err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	if err = h.Store.Delete(db, []influxql.Source{&src}, remainingExpr); err != nil {
+		h.httpError(w,
+			fmt.Sprintf("error in api/v2/delete - database: %q, retention policy: %q, start: %q, stop: %q, predicate: %q, error: %s",
+				db, rp, start, stop, predicate, err.Error()), http.StatusBadRequest)
+		return
 	}
 }
 
@@ -2022,6 +2125,7 @@ func (h *Handler) recovery(inner http.Handler, name string) http.Handler {
 // Store describes the behaviour of the storage packages Store type.
 type Store interface {
 	ReadFilter(ctx context.Context, req *datatypes.ReadFilterRequest) (reads.ResultSet, error)
+	Delete(database string, sources []influxql.Source, condition influxql.Expr) error
 }
 
 // Response represents a list of statement results.
