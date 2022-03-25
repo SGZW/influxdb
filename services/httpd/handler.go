@@ -201,7 +201,7 @@ func NewHandler(c Config) *Handler {
 		},
 		Route{
 			"delete",
-			"POST", "api/v2/delete", false, true, h.serveDeleteV2,
+			"POST", "/api/v2/delete", false, true, h.serveDeleteV2,
 		},
 		Route{
 			"write", // Data-ingest route.
@@ -835,7 +835,7 @@ func bucket2dbrp(bucket string) (string, string, error) {
 	}
 }
 
-type deleteRequestDecode struct {
+type DeleteBody struct {
 	Start     string `json:"start"`
 	Stop      string `json:"stop"`
 	Predicate string `json:"predicate"`
@@ -895,7 +895,7 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 		return
 	}
 
-	var drd deleteRequestDecode
+	var drd DeleteBody
 	if err := json.Unmarshal(buf.Bytes(), &drd); err != nil {
 		h.httpError(w, fmt.Sprintf("cannot parse delete request body: %s", err.Error()), http.StatusBadRequest)
 		return

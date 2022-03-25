@@ -1714,6 +1714,55 @@ func TestHandler_Write_V2_Precision(t *testing.T) {
 	}
 }
 
+func TestHandler_Delete_v2(t *testing.T) {
+	h := NewHandler(false)
+	h.MetaClient = &internal.MetaClientMock {
+		DatabaseFn: func(name string) *meta.DatabaseInfo {
+			if name == "mydb" {
+				return &meta.DatabaseInfo{
+					Name: "mydb",
+					RetentionPolicies: []meta.RetentionPolicyInfo{ meta.RetentionPolicyInfo{ Name: "myrp" }, },
+				}
+			} else {
+				return nil
+			}
+		},
+	}
+	h.Handler.MetaClient = h.MetaClient
+
+	type test struct {
+		url    string
+		body   httpd.DeleteBody
+		status int
+	}
+	tests := [] *test {
+		// Successful requests.
+//		&test{"/api/v2/delete?org=bar&bucket=mydb/myrp", nil, http.StatusBadRequest},
+		&test{url: "/api/v2/delete?org=bar&bucket=mydb/myrp", body: httpd.DeleteBody {Start: "2022-03-23T20:56:06Z"}, status: http.StatusBadRequest},
+	}
+	var req *http.Request
+	fn := func(ct *test) {
+		w := httptest.NewRecorder()
+		if body, err := json.Marshal(&ct.body); err != nil {
+			t.Fatalf("error marshaling body: %s", err)
+		} else {
+			req = MustNewJSONRequest("POST", ct.url, bytes.NewReader(body))
+		}
+		h.ServeHTTP(w, req)
+		var errMsg string
+		if w.Code != http.StatusOK {
+			errMsg = w.Header().Get("X-InfluxDB-Error")
+		}
+		// TODO(DSB): compare error message errMsg and expected. Add to test struct.
+		if w.Code != ct.status {
+			t.Fatalf("error, expected %d got %d: %s", ct.status, w.Code, errMsg)
+		}
+	}
+	for _, ct := range tests {
+		fn(ct)
+	}
+}
+
 // Ensure X-Forwarded-For header writes the correct log message.
 func TestHandler_XForwardedFor(t *testing.T) {
 	var buf bytes.Buffer
