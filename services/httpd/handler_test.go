@@ -1714,22 +1714,7 @@ func TestHandler_Write_V2_Precision(t *testing.T) {
 	}
 }
 
-func TestHandler_Delete_v2(t *testing.T) {
-	h := NewHandler(false)
-	h.MetaClient = &internal.MetaClientMock{
-		DatabaseFn: func(name string) *meta.DatabaseInfo {
-			if name == "mydb" {
-				return &meta.DatabaseInfo{
-					Name:              "mydb",
-					RetentionPolicies: []meta.RetentionPolicyInfo{meta.RetentionPolicyInfo{Name: "myrp"}},
-				}
-			} else {
-				return nil
-			}
-		},
-	}
-	h.Handler.MetaClient = h.MetaClient
-
+func TestHandler_Delete_V2(t *testing.T) {
 	type test struct {
 		url    string
 		body   httpd.DeleteBody
@@ -1737,6 +1722,31 @@ func TestHandler_Delete_v2(t *testing.T) {
 		errMsg string
 	}
 	tests := []*test{
+		&test{
+			url:    "/api/v2/delete?/myrp",
+			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "2022-03-23T22:56:06Z"},
+			status: http.StatusNotFound,
+			errMsg: `bucket name "" is missing a slash; not in "database/retention-policy" format`,
+		},
+		&test{
+			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
+			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "2022-03-23T22:56:06Z", Predicate: "?>!!?>?>;;;"},
+			status: http.StatusBadRequest,
+			errMsg: `cannot parse predicate "?>!!?>?>;;; AND time >= '2022-03-23T22:56:06Z' AND time < '2022-03-23T20:56:06Z'": found ?, expected identifier, string, number, bool at line 1, char 1`,
+		},
+		&test{
+			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
+			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "2022-03-23T22:56:06Z", Predicate: "_measurement='baz' AND t1=tagOne"},
+			status: http.StatusOK,
+			errMsg: ``,
+		},
+		&test{
+			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
+			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "2022-03-23T22:56:06Z"},
+			status: http.StatusOK,
+			errMsg: ``,
+		},
+
 		&test{
 			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
 			body:   httpd.DeleteBody{Start: "2022-03-23T20:56:06Z"},
@@ -1762,6 +1772,23 @@ func TestHandler_Delete_v2(t *testing.T) {
 			errMsg: `invalid format for start field "NotAValidTime", please use RFC3339Nano: parsing time "NotAValidTime" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "NotAValidTime" as "2006"`,
 		},
 	}
+
+	h := NewHandler(false)
+	h.MetaClient = &internal.MetaClientMock{
+		DatabaseFn: func(name string) *meta.DatabaseInfo {
+			if name == "mydb" {
+				return &meta.DatabaseInfo{
+					Name:              "mydb",
+					RetentionPolicies: []meta.RetentionPolicyInfo{meta.RetentionPolicyInfo{Name: "myrp"}},
+				}
+			} else {
+				return nil
+			}
+		},
+	}
+	h.Handler.MetaClient = h.MetaClient
+	h.Store.DeleteFn = func(database string, sources []influxql.Source, condition influxql.Expr) error { return nil }
+
 	var req *http.Request
 	fn := func(ct *test) {
 		w := httptest.NewRecorder()

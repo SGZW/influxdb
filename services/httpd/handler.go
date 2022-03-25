@@ -936,6 +936,10 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 	}
 
 	cond, err := influxql.ParseExpr(timePredicate)
+	if err != nil {
+		h.httpError(w, fmt.Sprintf("cannot parse predicate %q: %s", timePredicate, err.Error()), http.StatusBadRequest)
+		return
+	}
 
 	src := influxql.Measurement{Database: db, RetentionPolicy: rp}
 
