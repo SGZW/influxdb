@@ -901,11 +901,21 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 		return
 	}
 
+	if len(drd.Start) <= 0 {
+		h.httpError(w, "start field in RFC3339Nano format required", http.StatusBadRequest)
+		return
+	}
+
+	if len(drd.Stop) <= 0 {
+		h.httpError(w, "stop field in RFC3339Nano format required", http.StatusBadRequest)
+		return
+	}
 	// Avoid injection errors by converting and back-converting time.
 	start, err := time.Parse(time.RFC3339Nano, drd.Start)
 	if err != nil {
 		h.httpError(w, fmt.Sprintf("invalid format for start field %q, please use RFC3339Nano: %s",
 			drd.Start, err.Error()), http.StatusBadRequest)
+		return
 	}
 
 	// Avoid injection errors by converting and back-converting time.
@@ -913,6 +923,7 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 	if err != nil {
 		h.httpError(w, fmt.Sprintf("invalid format for stop field %q, please use RFC3339Nano: %s",
 			drd.Stop, err.Error()), http.StatusBadRequest)
+		return
 	}
 
 	var timePredicate string

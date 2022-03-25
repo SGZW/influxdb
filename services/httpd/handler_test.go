@@ -1716,12 +1716,12 @@ func TestHandler_Write_V2_Precision(t *testing.T) {
 
 func TestHandler_Delete_v2(t *testing.T) {
 	h := NewHandler(false)
-	h.MetaClient = &internal.MetaClientMock {
+	h.MetaClient = &internal.MetaClientMock{
 		DatabaseFn: func(name string) *meta.DatabaseInfo {
 			if name == "mydb" {
 				return &meta.DatabaseInfo{
-					Name: "mydb",
-					RetentionPolicies: []meta.RetentionPolicyInfo{ meta.RetentionPolicyInfo{ Name: "myrp" }, },
+					Name:              "mydb",
+					RetentionPolicies: []meta.RetentionPolicyInfo{meta.RetentionPolicyInfo{Name: "myrp"}},
 				}
 			} else {
 				return nil
@@ -1734,11 +1734,33 @@ func TestHandler_Delete_v2(t *testing.T) {
 		url    string
 		body   httpd.DeleteBody
 		status int
+		errMsg string
 	}
-	tests := [] *test {
-		// Successful requests.
-//		&test{"/api/v2/delete?org=bar&bucket=mydb/myrp", nil, http.StatusBadRequest},
-		&test{url: "/api/v2/delete?org=bar&bucket=mydb/myrp", body: httpd.DeleteBody {Start: "2022-03-23T20:56:06Z"}, status: http.StatusBadRequest},
+	tests := []*test{
+		&test{
+			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
+			body:   httpd.DeleteBody{Start: "2022-03-23T20:56:06Z"},
+			status: http.StatusBadRequest,
+			errMsg: "stop field in RFC3339Nano format required",
+		},
+		&test{
+			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
+			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z"},
+			status: http.StatusBadRequest,
+			errMsg: "start field in RFC3339Nano format required",
+		},
+		&test{
+			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
+			body:   httpd.DeleteBody{Start: "2022-03-23T20:56:06Z", Stop: "NotAValidTime"},
+			status: http.StatusBadRequest,
+			errMsg: `invalid format for stop field "NotAValidTime", please use RFC3339Nano: parsing time "NotAValidTime" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "NotAValidTime" as "2006"`,
+		},
+		&test{
+			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
+			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "NotAValidTime"},
+			status: http.StatusBadRequest,
+			errMsg: `invalid format for start field "NotAValidTime", please use RFC3339Nano: parsing time "NotAValidTime" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "NotAValidTime" as "2006"`,
+		},
 	}
 	var req *http.Request
 	fn := func(ct *test) {
@@ -1750,12 +1772,13 @@ func TestHandler_Delete_v2(t *testing.T) {
 		}
 		h.ServeHTTP(w, req)
 		var errMsg string
-		if w.Code != http.StatusOK {
-			errMsg = w.Header().Get("X-InfluxDB-Error")
-		}
-		// TODO(DSB): compare error message errMsg and expected. Add to test struct.
 		if w.Code != ct.status {
 			t.Fatalf("error, expected %d got %d: %s", ct.status, w.Code, errMsg)
+		} else if w.Code != http.StatusOK {
+			errMsg = w.Header().Get("X-InfluxDB-Error")
+			if errMsg != ct.errMsg {
+				t.Fatalf("incorrect error message, expected: %q, got: %q", ct.errMsg, errMsg)
+			}
 		}
 	}
 	for _, ct := range tests {
