@@ -847,31 +847,31 @@ type DeleteBody struct {
 func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user meta.User) {
 	db, rp, err := bucket2dbrp(r.URL.Query().Get("bucket"))
 	if err != nil {
-		h.httpError(w, err.Error(), http.StatusNotFound)
+		h.httpError(w, fmt.Sprintf("delete - bucket: %s", err.Error()), http.StatusNotFound)
 		return
 	}
 	if db == "" {
-		h.httpError(w, "database is required", http.StatusBadRequest)
+		h.httpError(w, "delete - database is required", http.StatusNotFound)
 		return
 	}
 
 	if di := h.MetaClient.Database(db); di == nil {
-		h.httpError(w, fmt.Sprintf("database not found: %q", db), http.StatusNotFound)
+		h.httpError(w, fmt.Sprintf("delete - database not found: %q", db), http.StatusNotFound)
 		return
 	} else if nil == di.RetentionPolicy(rp) {
-		h.httpError(w, fmt.Sprintf("retention policy not found in %q: %q", db, rp), http.StatusNotFound)
+		h.httpError(w, fmt.Sprintf("delete - retention policy not found in %q: %q", db, rp), http.StatusNotFound)
 		return
 	}
 
 	if h.Config.AuthEnabled {
 		if user == nil {
-			h.httpError(w, fmt.Sprintf("user is required to delete from database %q", db), http.StatusForbidden)
+			h.httpError(w, fmt.Sprintf("delete - user is required to delete from database %q", db), http.StatusForbidden)
 			return
 		}
 
 		// DeleteSeries requires write permission to the database
 		if err := h.WriteAuthorizer.AuthorizeWrite(user.ID(), db); err != nil {
-			h.httpError(w, fmt.Sprintf("%q user is not authorized to delete from database %q: %s", user.ID(), db, err.Error()), http.StatusForbidden)
+			h.httpError(w, fmt.Sprintf("delete - %q is not authorized to delete from %q: %s", user.ID(), db, err.Error()), http.StatusForbidden)
 			return
 		}
 	}
@@ -891,29 +891,29 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 
 	_, err = buf.ReadFrom(r.Body)
 	if err != nil {
-		h.httpError(w, fmt.Sprintf("cannot read delete request body: %s", err.Error()), http.StatusBadRequest)
+		h.httpError(w, fmt.Sprintf("delete - cannot read request body: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	var drd DeleteBody
 	if err := json.Unmarshal(buf.Bytes(), &drd); err != nil {
-		h.httpError(w, fmt.Sprintf("cannot parse delete request body: %s", err.Error()), http.StatusBadRequest)
+		h.httpError(w, fmt.Sprintf("delete - cannot parse request body: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	if len(drd.Start) <= 0 {
-		h.httpError(w, "start field in RFC3339Nano format required", http.StatusBadRequest)
+		h.httpError(w, "delete - start field in RFC3339Nano format required", http.StatusBadRequest)
 		return
 	}
 
 	if len(drd.Stop) <= 0 {
-		h.httpError(w, "stop field in RFC3339Nano format required", http.StatusBadRequest)
+		h.httpError(w, "delete - stop field in RFC3339Nano format required", http.StatusBadRequest)
 		return
 	}
 	// Avoid injection errors by converting and back-converting time.
 	start, err := time.Parse(time.RFC3339Nano, drd.Start)
 	if err != nil {
-		h.httpError(w, fmt.Sprintf("invalid format for start field %q, please use RFC3339Nano: %s",
+		h.httpError(w, fmt.Sprintf("delete - invalid format for start field %q, please use RFC3339Nano: %s",
 			drd.Start, err.Error()), http.StatusBadRequest)
 		return
 	}
@@ -921,7 +921,7 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 	// Avoid injection errors by converting and back-converting time.
 	stop, err := time.Parse(time.RFC3339Nano, drd.Stop)
 	if err != nil {
-		h.httpError(w, fmt.Sprintf("invalid format for stop field %q, please use RFC3339Nano: %s",
+		h.httpError(w, fmt.Sprintf("delete - invalid format for stop field %q, please use RFC3339Nano: %s",
 			drd.Stop, err.Error()), http.StatusBadRequest)
 		return
 	}
@@ -937,7 +937,7 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 
 	cond, err := influxql.ParseExpr(timePredicate)
 	if err != nil {
-		h.httpError(w, fmt.Sprintf("cannot parse predicate %q: %s", timePredicate, err.Error()), http.StatusBadRequest)
+		h.httpError(w, fmt.Sprintf("delete - cannot parse predicate %q: %s", timePredicate, err.Error()), http.StatusBadRequest)
 		return
 	}
 
@@ -957,7 +957,9 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 			case influxql.NEQ, influxql.REGEX, influxql.NEQREGEX:
 				tag, ok := e.LHS.(*influxql.VarRef)
 				if ok && tag.Val == "_measurement" {
-					return true, errors.New("delete predicate only supports equality operators for measurements")
+					return true,
+						fmt.Errorf("delete - predicate only supports equality operators. database: %q, retention policy: %q, start: %q, stop: %q, predicate: %q",
+							db, rp, drd.Start, drd.Stop, drd.Predicate)
 				}
 			}
 		}
@@ -965,14 +967,14 @@ func (h *Handler) serveDeleteV2(w http.ResponseWriter, r *http.Request, user met
 	})
 
 	if err != nil {
-		h.httpError(w, fmt.Sprintf("error parsing /api/v2/delete - database: %q, retention policy: %q, start: %q, stop: %q, predicate: %q, error: %s",
-			db, rp, drd.Start, drd.Stop, drd.Predicate, err.Error()), http.StatusBadRequest)
+		h.httpError(w, fmt.Sprintf("delete - error parsing predicate: %q. database: %q, retention policy: %q, start: %q, stop: %q, error: %s",
+			drd.Predicate, db, rp, drd.Start, drd.Stop, err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	if err = h.Store.Delete(db, []influxql.Source{&src}, remainingExpr); err != nil {
 		h.httpError(w,
-			fmt.Sprintf("error in /api/v2/delete - database: %q, retention policy: %q, start: %q, stop: %q, predicate: %q, error: %s",
+			fmt.Sprintf("delete - database: %q, retention policy: %q, start: %q, stop: %q, predicate: %q, error: %s",
 				db, rp, drd.Start, drd.Stop, drd.Predicate, err.Error()), http.StatusBadRequest)
 		return
 	}

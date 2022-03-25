@@ -1723,16 +1723,22 @@ func TestHandler_Delete_V2(t *testing.T) {
 	}
 	tests := []*test{
 		&test{
+			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
+			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "2022-03-23T22:56:06Z"},
+			status: http.StatusOK,
+			errMsg: ``,
+		},
+		&test{
 			url:    "/api/v2/delete?/myrp",
 			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "2022-03-23T22:56:06Z"},
 			status: http.StatusNotFound,
-			errMsg: `bucket name "" is missing a slash; not in "database/retention-policy" format`,
+			errMsg: `delete - bucket: bucket name "" is missing a slash; not in "database/retention-policy" format`,
 		},
 		&test{
 			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
 			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "2022-03-23T22:56:06Z", Predicate: "?>!!?>?>;;;"},
 			status: http.StatusBadRequest,
-			errMsg: `cannot parse predicate "?>!!?>?>;;; AND time >= '2022-03-23T22:56:06Z' AND time < '2022-03-23T20:56:06Z'": found ?, expected identifier, string, number, bool at line 1, char 1`,
+			errMsg: `delete - cannot parse predicate "?>!!?>?>;;; AND time >= '2022-03-23T22:56:06Z' AND time < '2022-03-23T20:56:06Z'": found ?, expected identifier, string, number, bool at line 1, char 1`,
 		},
 		&test{
 			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
@@ -1751,29 +1757,30 @@ func TestHandler_Delete_V2(t *testing.T) {
 			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
 			body:   httpd.DeleteBody{Start: "2022-03-23T20:56:06Z"},
 			status: http.StatusBadRequest,
-			errMsg: "stop field in RFC3339Nano format required",
+			errMsg: "delete - stop field in RFC3339Nano format required",
 		},
 		&test{
 			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
 			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z"},
 			status: http.StatusBadRequest,
-			errMsg: "start field in RFC3339Nano format required",
+			errMsg: "delete - start field in RFC3339Nano format required",
 		},
 		&test{
 			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
 			body:   httpd.DeleteBody{Start: "2022-03-23T20:56:06Z", Stop: "NotAValidTime"},
 			status: http.StatusBadRequest,
-			errMsg: `invalid format for stop field "NotAValidTime", please use RFC3339Nano: parsing time "NotAValidTime" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "NotAValidTime" as "2006"`,
+			errMsg: `delete - invalid format for stop field "NotAValidTime", please use RFC3339Nano: parsing time "NotAValidTime" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "NotAValidTime" as "2006"`,
 		},
 		&test{
 			url:    "/api/v2/delete?org=bar&bucket=mydb/myrp",
 			body:   httpd.DeleteBody{Stop: "2022-03-23T20:56:06Z", Start: "NotAValidTime"},
 			status: http.StatusBadRequest,
-			errMsg: `invalid format for start field "NotAValidTime", please use RFC3339Nano: parsing time "NotAValidTime" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "NotAValidTime" as "2006"`,
+			errMsg: `delete - invalid format for start field "NotAValidTime", please use RFC3339Nano: parsing time "NotAValidTime" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "NotAValidTime" as "2006"`,
 		},
 	}
 
 	h := NewHandler(false)
+	h.Store.DeleteFn = func(database string, sources []influxql.Source, condition influxql.Expr) error { return nil }
 	h.MetaClient = &internal.MetaClientMock{
 		DatabaseFn: func(name string) *meta.DatabaseInfo {
 			if name == "mydb" {
@@ -1787,7 +1794,6 @@ func TestHandler_Delete_V2(t *testing.T) {
 		},
 	}
 	h.Handler.MetaClient = h.MetaClient
-	h.Store.DeleteFn = func(database string, sources []influxql.Source, condition influxql.Expr) error { return nil }
 
 	var req *http.Request
 	fn := func(ct *test) {
